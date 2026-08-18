@@ -46,6 +46,14 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const [lastQuerySuccess, setLastQuerySuccess] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 拖动和调整大小状态
+  const [position, setPosition] = useState({ x: 20, y: 20 });
+  const [size, setSize] = useState({ width: 400, height: 450 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<HTMLDivElement>(null);
+
   // 同步外部visible状态到内部状态
   useEffect(() => {
     setVisible(propVisible);
@@ -218,14 +226,102 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
     }
   };
 
+  // 拖动处理
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // 只允许左键拖动
+
+    e.stopPropagation(); // 防止事件冒泡
+    e.preventDefault();
+
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    });
+
+    console.log('Drag started at position:', position);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const newPosition = {
+        x: moveEvent.clientX - dragStart.x,
+        y: moveEvent.clientY - dragStart.y
+      };
+
+      // 限制在窗口范围内
+      const maxX = window.innerWidth - 200;
+      const maxY = window.innerHeight - 100;
+      const clampedPosition = {
+        x: Math.max(0, Math.min(newPosition.x, maxX)),
+        y: Math.max(0, Math.min(newPosition.y, maxY))
+      };
+
+      setPosition(clampedPosition);
+    };
+
+    const handleMouseUp = () => {
+      console.log('Drag ended at position:', position);
+      setIsDragging(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // 调整大小处理
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    console.log('Resize started at size:', size);
+
+    setIsResizing(true);
+    setDragStart({
+      x: e.clientX,
+      y: e.clientY
+    });
+
+    const handleResizeMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - dragStart.x;
+      const deltaY = moveEvent.clientY - dragStart.y;
+
+      const newSize = {
+        width: Math.max(300, size.width + deltaX), // 最小宽度300px
+        height: Math.max(400, size.height + deltaY) // 最小高度400px
+      };
+
+      console.log('Resizing to:', newSize);
+      setSize(newSize);
+
+      setDragStart({
+        x: moveEvent.clientX,
+        y: moveEvent.clientY
+      });
+    };
+
+    const handleResizeUp = () => {
+      console.log('Resize ended at size:', size);
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeUp);
+    };
+
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeUp);
+  };
+
   if (!visible) return null;
 
   return (
     <div
+      ref={dragRef}
       style={{
         position: "fixed",
-        bottom: 20,
-        right: 20,
+        left: position.x,
+        top: position.y,
+        bottom: "auto",
+        right: "auto",
         zIndex: 1000,
       }}
     >
@@ -237,11 +333,16 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
             style={{
               borderRadius: 8,
               boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-              cursor: "pointer",
+              cursor: isDragging ? "grabbing" : "grab",
               backgroundColor: "#f0f8ff",
               border: "2px solid #1890ff",
+              userSelect: "none",
             }}
-            onClick={toggleExpanded}
+            onMouseDown={handleMouseDown}
+            onClick={(e) => {
+              e.stopPropagation(); // 防止拖动时触发点击展开
+              toggleExpanded();
+            }}
             hoverable
           >
             <Space>
@@ -275,47 +376,59 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
         <Card
           size="small"
           style={{
-            width: 400,
+            width: size.width,
             borderRadius: 8,
             boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
             backgroundColor: "#f0f8ff",
             border: "2px solid #1890ff",
+            position: "relative",
+            resize: "none",
+            overflow: "hidden",
           }}
           title={
-            <Space style={{ width: "100%", justifyContent: "space-between" }}>
-              <Space>
-                <Avatar
-                  icon={<RobotOutlined />}
-                  style={{
-                    backgroundColor: "#1890ff",
-                  }}
-                  size={24}
-                />
-                <Text strong style={{ fontSize: 13, color: "#1890ff" }}>
-                  AI 助手
-                </Text>
+            <div
+              style={{
+                width: "100%",
+                cursor: isDragging ? "grabbing" : "grab",
+                userSelect: "none",
+              }}
+              onMouseDown={handleMouseDown}
+            >
+              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                <Space>
+                  <Avatar
+                    icon={<RobotOutlined />}
+                    style={{
+                      backgroundColor: "#1890ff",
+                    }}
+                    size={24}
+                  />
+                  <Text strong style={{ fontSize: 13, color: "#1890ff" }}>
+                    AI 助手
+                  </Text>
+                </Space>
+                <Space size={4}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<DownOutlined />}
+                    onClick={toggleExpanded}
+                    style={{ color: "#1890ff" }}
+                  />
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CloseOutlined />}
+                    onClick={handleClose}
+                    style={{ color: "#ff4d4f" }}
+                  />
+                </Space>
               </Space>
-              <Space size={4}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<DownOutlined />}
-                  onClick={toggleExpanded}
-                  style={{ color: "#1890ff" }}
-                />
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CloseOutlined />}
-                  onClick={handleClose}
-                  style={{ color: "#ff4d4f" }}
-                />
-              </Space>
-            </Space>
+            </div>
           }
           bodyStyle={{
             padding: "12px",
-            height: "360px",
+            height: size.height - 100, // 减去头部和底部区域的高度
             overflowY: "auto",
             display: "flex",
             flexDirection: "column",
@@ -476,6 +589,31 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
               </Text>
             )}
           </div>
+
+          {/* 调整大小手柄 */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 0,
+              right: 0,
+              width: 24,
+              height: 24,
+              cursor: "nwse-resize",
+              zIndex: 10,
+              background: "linear-gradient(135deg, transparent 50%, rgba(24, 144, 255, 0.3) 50%)",
+              borderRadius: "0 0 0 8px",
+              border: "1px solid transparent",
+              transition: "border-color 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#1890ff";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "transparent";
+            }}
+            onMouseDown={handleResizeMouseDown}
+            title="拖动调整大小"
+          />
         </Card>
       )}
     </div>
