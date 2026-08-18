@@ -39,6 +39,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const [showBadge, setShowBadge] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lastQuerySuccess, setLastQuerySuccess] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 默认问候消息
@@ -63,7 +64,8 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
 
   // 查询成功时显示导出询问
   useEffect(() => {
-    if (querySuccess && rowCount > 0) {
+    // 只在查询成功状态变化时触发一次
+    if (querySuccess && !lastQuerySuccess && rowCount > 0) {
       // 如果助手是折叠状态，自动展开
       if (!expanded) {
         setExpanded(true);
@@ -94,7 +96,12 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
       setMessages(prev => [...prev, exportMessage]);
       setShowBadge(true);
     }
-  }, [querySuccess, rowCount, expanded, onExport]);
+  }, [querySuccess, rowCount, lastQuerySuccess, onExport]);
+
+  // 更新最后查询成功状态
+  useEffect(() => {
+    setLastQuerySuccess(querySuccess);
+  }, [querySuccess]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || !databaseName) {
