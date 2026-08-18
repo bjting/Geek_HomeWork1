@@ -1,8 +1,11 @@
 """Database connection management API endpoints."""
 
+import logging
+import httpx
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
-from typing import List
+from typing import List, Dict
 from app.database import get_session
 from app.models.database import DatabaseConnection, ConnectionStatus, DatabaseType
 from app.utils.db_parser import detect_database_type
@@ -13,8 +16,11 @@ from app.models.schemas import (
     TableMetadata,
 )
 from app.services.database_service import database_service
-from app.services.metadata import fetch_metadata
+from app.services.metadata import fetch_metadata, get_cached_metadata
+from app.config import settings
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/dbs", tags=["databases"])
 
@@ -282,3 +288,156 @@ async def refresh_database_metadata(
         fetchedAt=fetched_at,
         isStale=is_stale,
     )
+
+
+@router.post("/{name}/ai/chat")
+async def ai_chat(
+    name: str,
+    chat_data: Dict[str, str],
+    session: Session = Depends(get_session),
+):
+    """
+    AI chat endpoint for answering database-related questions.
+
+    Args:
+        name: Database connection name
+        chat_data: Chat data with 'question' field
+        session: Database session
+
+    Returns:
+        Dict with 'answer' field containing AI response
+    """
+    # Get connection
+    statement = select(DatabaseConnection).where(
+        DatabaseConnection.name == name
+    )
+    connection = session.exec(statement).first()
+
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Database connection '{name}' not found",
+        )
+
+    # Get metadata for context
+    try:
+        metadata_obj = await get_cached_metadata(session, connection.name)
+        if not metadata_obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Metadata not found for database '{name}'. Please refresh metadata first.",
+            )
+        metadata = json.loads(metadata_obj.metadata_json)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load metadata: {str(e)}",
+        )
+
+    # Prepare system prompt for database assistance
+    system_message = f"""You are a database assistant helping users understand and query the database.
+
+Database Name: {name}
+Database Type: {connection.db_type.value}
+
+Database Schema:
+"""
+
+    # Build schema context
+    for table in metadata.get("tables", []):
+        table_info = f"Table: {table['schemaName']}.{table['name']}"
+        if table.get("rowCount"):
+            table_info += f" ({table['rowCount']} rows)"
+
+        columns_info = []
+        for col in table.get("columns", []):
+            col_desc = f" - {col['name']} ({col['dataType']})"
+            if col.get("primaryKey"):
+                col_desc += " PRIMARY KEY"
+            if not col.get("nullable", True):
+                col_desc += " NOT NULL"
+            if col.get("unique"):
+                col_desc += " UNIQUE"
+            columns_info.append(col_desc)
+
+        table_info += "\n" + "\n".join(columns_info)
+        system_message += table_info + "\n\n"
+
+    for view in metadata.get("views", []):
+        view_info = f"View: {view['schemaName']}.{view['name']}"
+        columns_info = [f"  - {col['name']} ({col['dataType']})" for col in view.get("columns", [])]
+        view_info += "\n" + "\n".join(columns_info)
+        system_message += view_info + "\n\n"
+
+    system_message += """Rules:
+1. Help users understand database structure and suggest SQL queries
+2. Be friendly and provide clear, helpful responses in Chinese
+3. When suggesting SQL queries, provide explanations
+4. If users ask to execute a query, tell them to use the Query Editor
+5. Focus on providing useful information about tables, columns, and relationships
+6. Be concise but thorough in your answers
+
+Output format:
+Provide clear, friendly responses in Chinese. No code blocks unless specifically asked for SQL queries."""
+
+    # Call DashScope AI API
+    try:
+        headers = {
+            "Authorization": f"Bearer {settings.dashscope_api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": settings.ai_model,
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": chat_data.get("question", "")},
+            ],
+            "temperature": settings.ai_temperature,
+            "max_tokens": settings.ai_max_tokens,
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{settings.dashscope_api_url}/chat/completions",
+                headers=headers,
+                json=payload
+            )
+
+        if response.status_code != 200:
+            error_msg = response.text
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"DashScope API error: {response.status_code} - {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"AI service temporarily unavailable"
+            )
+
+        result = response.json()
+        ai_answer = result["choices"][0]["message"]["content"].strip()
+
+        logger.info(f"AI chat response for database {name}: {ai_answer[:50]}...")
+
+        return {"answer": ai_answer}
+
+    except httpx.TimeoutException:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error("DashScope API timeout")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="AI service timeout"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to call AI chat: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get AI response: {str(e)}"
+        )

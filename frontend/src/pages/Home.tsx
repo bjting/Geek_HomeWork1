@@ -22,6 +22,7 @@ import {
   DatabaseOutlined,
   ReloadOutlined,
   ExclamationCircleOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import { apiClient } from "../services/api";
 import { DatabaseMetadata, TableMetadata } from "../types/metadata";
@@ -29,6 +30,7 @@ import { MetadataTree } from "../components/MetadataTree";
 import { SqlEditor } from "../components/SqlEditor";
 import { DatabaseSidebar } from "../components/DatabaseSidebar";
 import { NaturalLanguageInput } from "../components/NaturalLanguageInput";
+import { AIAssistant } from "../components/AIAssistant";
 
 const { Title, Text } = Typography;
 
@@ -51,6 +53,12 @@ export const Home: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"manual" | "natural">("manual");
   const [generatingSql, setGeneratingSql] = useState(false);
   const [nlError, setNlError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportingCSV, setExportingCSV] = useState(false);
+  const [exportingJSON, setExportingJSON] = useState(false);
+  const [defaultExportFormat, setDefaultExportFormat] = useState<"csv" | "json" | "excel" | null>(null);
+  const [querySuccess, setQuerySuccess] = useState(false);
+  const [executingAndExporting, setExecutingAndExporting] = useState(false);
 
   useEffect(() => {
     if (selectedDatabase) {
@@ -88,6 +96,90 @@ export const Home: React.FC = () => {
         { sql: sql.trim() }
       );
       setQueryResult(response.data);
+      setQuerySuccess(true);
+
+      message.success(
+        `Query executed - ${response.data.rowCount} rows in ${response.data.executionTimeMs}ms`
+      );
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || "Query execution failed");
+      setQueryResult(null);
+      setQuerySuccess(false);
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const handleAutoExport = async (format: "csv" | "json" | "excel") => {
+    if (!selectedDatabase || !sql.trim()) {
+      message.error("No query to export");
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const formData = new FormData();
+      formData.append("format", format);
+      formData.append("maxRows", "1000");
+      formData.append("sql", sql.trim());
+
+      const response = await apiClient.post(
+        `/api/v1/dbs/${selectedDatabase}/export`,
+        formData,
+        {
+          responseType: "blob",
+        }
+      );
+
+      // Extract filename from response headers
+      const contentDisposition = response.headers["content-disposition"];
+      let filename = `query_results.${format}`;
+      if (contentDisposition) {
+        const matches = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (matches && matches[1]) {
+          filename = matches[1].replace(/['"]/g, "");
+        }
+      }
+
+      // Download file
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      message.success(`Successfully exported to ${format.toUpperCase()}`);
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.detail || err.message || "Export failed";
+      message.error(errorMessage);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExecuteAndExport = async (format: "csv" | "json" | "excel") => {
+    if (!selectedDatabase || !sql.trim()) {
+      message.warning("Please enter a SQL query");
+      return;
+    }
+
+    setExecutingAndExporting(true);
+    try {
+      const response = await apiClient.post<QueryResult>(
+        `/api/v1/dbs/${selectedDatabase}/query`,
+        { sql: sql.trim() }
+      );
+      setQueryResult(response.data);
+
+      if (response.data.rowCount > 0) {
+        await handleAutoExport(format);
+      } else {
+        message.info("No results to export");
+      }
+
       message.success(
         `Query executed - ${response.data.rowCount} rows in ${response.data.executionTimeMs}ms`
       );
@@ -95,7 +187,7 @@ export const Home: React.FC = () => {
       message.error(error.response?.data?.detail || "Query execution failed");
       setQueryResult(null);
     } finally {
-      setExecuting(false);
+      setExecutingAndExporting(false);
     }
   };
 
@@ -158,6 +250,7 @@ export const Home: React.FC = () => {
   const exportToCSV = () => {
     if (!queryResult) return;
 
+    setExportingCSV(true);
     // Generate CSV content
     const headers = queryResult.columns.map((col) => col.name);
     const csvRows = [headers.join(",")];
@@ -186,6 +279,7 @@ export const Home: React.FC = () => {
     link.click();
     URL.revokeObjectURL(link.href);
     message.success(`Exported ${queryResult.rowCount} rows to CSV`);
+    setExportingCSV(false);
   };
 
   const handleExportJSON = () => {
@@ -210,6 +304,7 @@ export const Home: React.FC = () => {
   const exportToJSON = () => {
     if (!queryResult) return;
 
+    setExportingJSON(true);
     const jsonContent = JSON.stringify(queryResult.rows, null, 2);
     const blob = new Blob([jsonContent], { type: "application/json;charset=utf-8;" });
     const link = document.createElement("a");
@@ -219,6 +314,7 @@ export const Home: React.FC = () => {
     link.click();
     URL.revokeObjectURL(link.href);
     message.success(`Exported ${queryResult.rowCount} rows to JSON`);
+    setExportingJSON(false);
   };
 
   const tableColumns =
@@ -524,7 +620,7 @@ export const Home: React.FC = () => {
             </Text>
           }
           extra={
-            activeTab === "manual" ? (
+            <Space>
               <Button
                 type="primary"
                 icon={<PlayCircleOutlined />}
@@ -540,7 +636,21 @@ export const Home: React.FC = () => {
               >
                 EXECUTE
               </Button>
-            ) : null
+              <Button
+                icon={<ThunderboltOutlined />}
+                onClick={() => handleExecuteAndExport("csv")}
+                loading={executingAndExporting}
+                size="large"
+                style={{
+                  height: 40,
+                  paddingLeft: 20,
+                  paddingRight: 20,
+                  fontWeight: 700,
+                }}
+              >
+                EXECUTE & EXPORT
+              </Button>
+            </Space>
           }
           style={{ borderWidth: 2, borderColor: "#000000", marginBottom: 16 }}
         >
@@ -627,6 +737,7 @@ export const Home: React.FC = () => {
                 <Button
                   size="small"
                   onClick={handleExportCSV}
+                  loading={exportingCSV}
                   style={{ fontSize: 12, fontWeight: 700 }}
                 >
                   EXPORT CSV
@@ -634,6 +745,7 @@ export const Home: React.FC = () => {
                 <Button
                   size="small"
                   onClick={handleExportJSON}
+                  loading={exportingJSON}
                   style={{ fontSize: 12, fontWeight: 700 }}
                 >
                   EXPORT JSON
@@ -658,6 +770,17 @@ export const Home: React.FC = () => {
             />
           </Card>
         )}
+
+        {/* AI Assistant */}
+        <AIAssistant
+          querySuccess={querySuccess}
+          rowCount={queryResult?.rowCount || 0}
+          onExport={(format) => {
+            handleAutoExport(format);
+          }}
+          onDismiss={() => setQuerySuccess(false)}
+          databaseName={selectedDatabase || undefined}
+        />
       </div>
     </div>
   );

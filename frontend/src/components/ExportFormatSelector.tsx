@@ -24,7 +24,7 @@ export const ExportFormatSelector: React.FC<ExportFormatSelectorProps> = ({
     onConfirm(selectedFormat);
   };
 
-  const handleFormatChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFormatChange = (e: any) => {
     setSelectedFormat(e.target.value as "csv" | "json" | "excel");
   };
 

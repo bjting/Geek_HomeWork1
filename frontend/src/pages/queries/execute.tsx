@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Card, Button, Space, Spin, Alert, List, Typography, message } from "antd";
-import { PlayCircleOutlined, ReloadOutlined, DownloadOutlined } from "@ant-design/icons";
+import { Card, Button, Space, Spin, Alert, List, Typography, message, Dropdown } from "antd";
+import { PlayCircleOutlined, ReloadOutlined, DownloadOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import type { MenuProps } from "antd";
 import { apiClient } from "../../services/api";
 import { exportService } from "../../services/export";
 import { QueryResult, QueryHistoryEntry, QueryInput } from "../../types/query";
 import { SqlEditor } from "../../components/SqlEditor";
 import { ResultTable } from "../../components/ResultTable";
 import { ExportFormatSelector } from "../../components/ExportFormatSelector";
+import { ExportPromptModal } from "../../components/ExportPromptModal";
 
 const { Text } = Typography;
 
@@ -23,6 +25,8 @@ export const QueryExecute: React.FC = () => {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [autoExportPromptVisible, setAutoExportPromptVisible] = useState(false);
+  const [defaultExportFormat, setDefaultExportFormat] = useState<"csv" | "json" | "excel" | null>(null);
 
   useEffect(() => {
     if (databaseName) {
@@ -65,6 +69,15 @@ export const QueryExecute: React.FC = () => {
       setResult(response.data);
       // Reload history after successful query
       await loadHistory();
+
+      // Show auto export prompt if results exist and no default format is set
+      if (response.data.rowCount > 0 && defaultExportFormat) {
+        // Auto export with default format
+        await handleAutoExport(defaultExportFormat);
+      } else if (response.data.rowCount > 0) {
+        // Show prompt dialog
+        setAutoExportPromptVisible(true);
+      }
     } catch (err: any) {
       const errorMessage =
         err.response?.data?.detail || err.message || "Query execution failed";
@@ -74,11 +87,87 @@ export const QueryExecute: React.FC = () => {
     }
   };
 
+  const handleAutoExport = async (format: "csv" | "json" | "excel") => {
+    if (!databaseName || !sql.trim()) {
+      message.error("No query to export");
+      return;
+    }
+
+    setExporting(true);
+    try {
+      await exportService.exportResults(databaseName, {
+        format,
+        maxRows: 1000,
+        sql: sql.trim(),
+      });
+      message.success(`Successfully exported to ${format.toUpperCase()}`);
+    } catch (err: any) {
+      const errorMessage =
+        err.response?.data?.detail || err.message || "Export failed";
+      message.error(errorMessage);
+    } finally {
+      setExporting(false);
+      setAutoExportPromptVisible(false);
+    }
+  };
+
   const handleHistoryClick = (historyItem: QueryHistoryEntry) => {
     setSql(historyItem.sqlText);
     setError(null);
     setResult(null);
   };
+
+  const handleExecuteAndExport = async (format: "csv" | "json" | "excel") => {
+    if (!databaseName || !sql.trim()) {
+      setError("Please enter a SQL query");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const input: QueryInput = { sql: sql.trim() };
+      const response = await apiClient.post<QueryResult>(
+        `/api/v1/dbs/${databaseName}/query`,
+        input
+      );
+      setResult(response.data);
+
+      if (response.data.rowCount > 0) {
+        await handleAutoExport(format);
+      } else {
+        message.info("No results to export");
+      }
+
+      await loadHistory();
+    } catch (err: any) {
+      const errorMessage =
+        err.response?.data?.detail || err.message || "Query execution failed";
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const executeAndExportMenuItems: MenuProps['items'] = [
+    {
+      key: 'csv',
+      label: 'Export as CSV',
+      onClick: () => handleExecuteAndExport('csv'),
+    },
+    {
+      key: 'json',
+      label: 'Export as JSON',
+      onClick: () => handleExecuteAndExport('json'),
+    },
+    {
+      key: 'excel',
+      label: 'Export as Excel',
+      onClick: () => handleExecuteAndExport('excel'),
+    },
+  ];
 
   const handleExportClick = () => {
     if (!result || result.rowCount === 0) {
@@ -126,6 +215,17 @@ export const QueryExecute: React.FC = () => {
             >
               Execute
             </Button>
+            <Dropdown
+              menu={{ items: executeAndExportMenuItems }}
+              trigger={['click']}
+            >
+              <Button
+                icon={<ThunderboltOutlined />}
+                loading={loading}
+              >
+                Execute & Export
+              </Button>
+            </Dropdown>
             <Button
               icon={<ReloadOutlined />}
               onClick={loadHistory}
@@ -235,6 +335,19 @@ export const QueryExecute: React.FC = () => {
         onConfirm={handleExportConfirm}
         onCancel={() => setExportModalVisible(false)}
         loading={exporting}
+      />
+
+      <ExportPromptModal
+        visible={autoExportPromptVisible}
+        rowCount={result?.rowCount || 0}
+        onExport={(format, remember) => {
+          if (remember) {
+            setDefaultExportFormat(format);
+          }
+          handleAutoExport(format);
+        }}
+        onSkip={() => setAutoExportPromptVisible(false)}
+        onDismiss={() => setAutoExportPromptVisible(false)}
       />
     </div>
   );

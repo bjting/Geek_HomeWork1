@@ -7,8 +7,14 @@ from pathlib import Path
 class Settings(BaseSettings):
     """Application settings."""
 
-    # OpenAI API
-    openai_api_key: str
+    # DashScope API Configuration
+    dashscope_api_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    dashscope_api_key: str
+
+    # AI Model Configuration
+    ai_model: str = "qwen-max"
+    ai_temperature: float = 0.1
+    ai_max_tokens: int = 500
 
     # Data directory
     db_query_data_dir: str = str(Path.home() / ".db_query")

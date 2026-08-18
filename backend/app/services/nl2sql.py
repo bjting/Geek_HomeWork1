@@ -1,6 +1,6 @@
-"""Natural Language to SQL conversion service using OpenAI."""
+"""Natural Language to SQL conversion service using DashScope."""
 
-from openai import AsyncOpenAI
+import httpx
 from app.config import settings
 from app.models.database import DatabaseType
 import logging
@@ -9,17 +9,20 @@ logger = logging.getLogger(__name__)
 
 
 class NaturalLanguageToSQLService:
-    """Service for converting natural language queries to SQL using OpenAI."""
+    """Service for converting natural language to SQL using DashScope."""
 
     def __init__(self):
-        """Initialize OpenAI client."""
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self.model = "gpt-4o-mini"  # Cost-effective model for SQL generation
+        """Initialize DashScope client."""
+        self.api_url = settings.dashscope_api_url
+        self.api_key = settings.dashscope_api_key
+        self.model = settings.ai_model
+        self.temperature = settings.ai_temperature
+        self.max_tokens = settings.ai_max_tokens
 
     def _build_prompt(
         self, user_prompt: str, metadata: dict, db_type: DatabaseType = DatabaseType.POSTGRESQL
-    ) -> list[dict[str, str]]:
-        """Build the prompt for OpenAI with database metadata context.
+    ) -> str:
+        """Build the prompt for DashScope with database metadata context.
 
         Args:
             user_prompt: Natural language query from user
@@ -27,7 +30,7 @@ class NaturalLanguageToSQLService:
             db_type: Database type (PostgreSQL or MySQL)
 
         Returns:
-            List of messages for OpenAI chat completion
+            System prompt with database schema context
         """
         # Build schema context
         schema_context = []
@@ -84,10 +87,7 @@ Rules:
 Output format:
 Return ONLY the SQL query, nothing else. No explanations, no markdown, just the SQL."""
 
-        return [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": user_prompt},
-        ]
+        return system_message
 
     async def generate_sql(
         self, user_prompt: str, metadata: dict, db_type: DatabaseType = DatabaseType.POSTGRESQL
@@ -103,20 +103,41 @@ Return ONLY the SQL query, nothing else. No explanations, no markdown, just the 
             Dict with 'sql' and 'explanation' keys
 
         Raises:
-            Exception: If OpenAI API call fails
+            Exception: If DashScope API call fails
         """
         try:
-            messages = self._build_prompt(user_prompt, metadata, db_type)
+            system_prompt = self._build_prompt(user_prompt, metadata, db_type)
 
-            # Call OpenAI API
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.1,  # Low temperature for consistent SQL generation
-                max_tokens=500,
-            )
+            # Call DashScope API using OpenAI-compatible interface
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
 
-            generated_sql = response.choices[0].message.content.strip()
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+            }
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.api_url}/chat/completions",
+                    headers=headers,
+                    json=payload
+                )
+
+            if response.status_code != 200:
+                error_msg = response.text
+                logger.error(f"DashScope API error: {response.status_code} - {error_msg}")
+                raise Exception(f"DashScope API error: {error_msg}")
+
+            result = response.json()
+            generated_sql = result["choices"][0]["message"]["content"].strip()
 
             # Clean up the response (remove markdown code blocks if present)
             if generated_sql.startswith("```sql"):
@@ -131,6 +152,9 @@ Return ONLY the SQL query, nothing else. No explanations, no markdown, just the 
 
             return {"sql": generated_sql, "explanation": explanation}
 
+        except httpx.TimeoutException:
+            logger.error("DashScope API timeout")
+            raise Exception("DashScope API timeout")
         except Exception as e:
             logger.error(f"Failed to generate SQL: {str(e)}")
             raise Exception(f"Failed to generate SQL: {str(e)}")
