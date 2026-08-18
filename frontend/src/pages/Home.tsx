@@ -91,6 +91,8 @@ export const Home: React.FC = () => {
       return;
     }
 
+    // 重置查询成功状态，确保每次新查询都能触发AI助手展开
+    setQuerySuccess(false);
     setExecuting(true);
     try {
       const response = await apiClient.post<QueryResult>(
