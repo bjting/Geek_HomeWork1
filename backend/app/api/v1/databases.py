@@ -5,7 +5,7 @@ import httpx
 import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
-from typing import List, Dict
+from typing import List
 from app.database import get_session
 from app.models.database import DatabaseConnection, ConnectionStatus, DatabaseType
 from app.utils.db_parser import detect_database_type
@@ -15,6 +15,7 @@ from app.models.schemas import (
     DatabaseMetadataResponse,
     TableMetadata,
 )
+from app.models.chat import ChatRequest, ChatResponse
 from app.services.database_service import database_service
 from app.services.metadata import fetch_metadata, get_cached_metadata
 from app.config import settings
@@ -290,12 +291,12 @@ async def refresh_database_metadata(
     )
 
 
-@router.post("/{name}/ai/chat")
+@router.post("/{name}/ai/chat", response_model=ChatResponse)
 async def ai_chat(
     name: str,
-    chat_data: Dict[str, str],
+    chat_data: ChatRequest,
     session: Session = Depends(get_session),
-):
+) -> ChatResponse:
     """
     AI chat endpoint for answering database-related questions.
 
@@ -393,7 +394,7 @@ Provide clear, friendly responses in Chinese. No code blocks unless specifically
             "model": settings.ai_model,
             "messages": [
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": chat_data.get("question", "")},
+                {"role": "user", "content": chat_data.question},
             ],
             "temperature": settings.ai_temperature,
             "max_tokens": settings.ai_max_tokens,
@@ -408,8 +409,6 @@ Provide clear, friendly responses in Chinese. No code blocks unless specifically
 
         if response.status_code != 200:
             error_msg = response.text
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"DashScope API error: {response.status_code} - {error_msg}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -424,8 +423,6 @@ Provide clear, friendly responses in Chinese. No code blocks unless specifically
         return {"answer": ai_answer}
 
     except httpx.TimeoutException:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error("DashScope API timeout")
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -434,8 +431,6 @@ Provide clear, friendly responses in Chinese. No code blocks unless specifically
     except HTTPException:
         raise
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to call AI chat: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
