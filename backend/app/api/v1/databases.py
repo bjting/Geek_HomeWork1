@@ -18,6 +18,7 @@ from app.models.schemas import (
 from app.models.chat import ChatRequest, ChatResponse
 from app.services.database_service import database_service
 from app.services.metadata import fetch_metadata, get_cached_metadata
+from app.services.ai_handler import AIHandler
 from app.config import settings
 from datetime import datetime, timezone
 
@@ -292,147 +293,43 @@ async def refresh_database_metadata(
 
 
 @router.post("/{name}/ai/chat", response_model=ChatResponse)
-async def ai_chat(
-    name: str,
-    chat_data: ChatRequest,
-    session: Session = Depends(get_session),
-) -> ChatResponse:
-    """
-    AI chat endpoint for answering database-related questions.
-
-    Args:
-        name: Database connection name
-        chat_data: Chat data with 'question' field
-        session: Database session
-
-    Returns:
-        Dict with 'answer' field containing AI response
-    """
-    # Get connection
-    statement = select(DatabaseConnection).where(
-        DatabaseConnection.name == name
-    )
-    connection = session.exec(statement).first()
-
-    if not connection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Database connection '{name}' not found",
-        )
-
-    # Get metadata for context
+async def ai_chat_endpoint(chat_data: ChatRequest):
+    """AI聊天端点 - 集成版本"""
     try:
-        metadata_obj = await get_cached_metadata(session, connection.name)
-        if not metadata_obj:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Metadata not found for database '{name}'. Please refresh metadata first.",
-            )
-        metadata = json.loads(metadata_obj.metadata_json)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to load metadata: {str(e)}",
-        )
+        question = chat_data.question
 
-    # Prepare system prompt for database assistance
-    system_message = f"""You are a database assistant helping users understand and query the database.
+        api_key = "sk-ws-H.EPDMYRM.8yA3.MEYCIQCDu_HbcyJswWPNMTSZ_UGesWs_Woz98LHQNqw21WLECgIhAJzb_2atP6Y4_7fUdGmlkT_bPT9_gi4eDJrJUgl9MDt7"
+        api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
-Database Name: {name}
-Database Type: {connection.db_type.value}
-
-Database Schema:
-"""
-
-    # Build schema context
-    for table in metadata.get("tables", []):
-        table_info = f"Table: {table['schemaName']}.{table['name']}"
-        if table.get("rowCount"):
-            table_info += f" ({table['rowCount']} rows)"
-
-        columns_info = []
-        for col in table.get("columns", []):
-            col_desc = f" - {col['name']} ({col['dataType']})"
-            if col.get("primaryKey"):
-                col_desc += " PRIMARY KEY"
-            if not col.get("nullable", True):
-                col_desc += " NOT NULL"
-            if col.get("unique"):
-                col_desc += " UNIQUE"
-            columns_info.append(col_desc)
-
-        table_info += "\n" + "\n".join(columns_info)
-        system_message += table_info + "\n\n"
-
-    for view in metadata.get("views", []):
-        view_info = f"View: {view['schemaName']}.{view['name']}"
-        columns_info = [f"  - {col['name']} ({col['dataType']})" for col in view.get("columns", [])]
-        view_info += "\n" + "\n".join(columns_info)
-        system_message += view_info + "\n\n"
-
-    system_message += """Rules:
-1. Help users understand database structure and suggest SQL queries
-2. Be friendly and provide clear, helpful responses in Chinese
-3. When suggesting SQL queries, provide explanations
-4. If users ask to execute a query, tell them to use the Query Editor
-5. Focus on providing useful information about tables, columns, and relationships
-6. Be concise but thorough in your answers
-
-Output format:
-Provide clear, friendly responses in Chinese. No code blocks unless specifically asked for SQL queries."""
-
-    # Call DashScope AI API
-    try:
         headers = {
-            "Authorization": f"Bearer {settings.dashscope_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
 
         payload = {
-            "model": settings.ai_model,
+            "model": "qwen-max",
             "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": chat_data.question},
+                {"role": "system", "content": "You are a helpful database assistant. Answer in Chinese."},
+                {"role": "user", "content": question},
             ],
-            "temperature": settings.ai_temperature,
-            "max_tokens": settings.ai_max_tokens,
+            "temperature": 0.3,
+            "max_tokens": 2000,
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                f"{settings.dashscope_api_url}/chat/completions",
+                f"{api_url}/chat/completions",
                 headers=headers,
                 json=payload
             )
 
-        if response.status_code != 200:
-            error_msg = response.text
-            logger.error(f"DashScope API error: {response.status_code} - {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"AI service temporarily unavailable"
-            )
+            if response.status_code != 200:
+                return ChatResponse(answer="AI服务暂时不可用")
 
-        result = response.json()
-        ai_answer = result["choices"][0]["message"]["content"].strip()
+            result = response.json()
+            ai_answer = result["choices"][0]["message"]["content"].strip()
 
-        logger.info(f"AI chat response for database {name}: {ai_answer[:50]}...")
+            return ChatResponse(answer=ai_answer)
 
-        return {"answer": ai_answer}
-
-    except httpx.TimeoutException:
-        logger.error("DashScope API timeout")
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="AI service timeout"
-        )
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Failed to call AI chat: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get AI response: {str(e)}"
-        )
+        return ChatResponse(answer=f"AI错误: {str(e)}")

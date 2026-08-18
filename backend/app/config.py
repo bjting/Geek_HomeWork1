@@ -13,8 +13,8 @@ class Settings(BaseSettings):
 
     # AI Model Configuration
     ai_model: str = "qwen-max"
-    ai_temperature: float = 0.1
-    ai_max_tokens: int = 500
+    ai_temperature: float = 0.3
+    ai_max_tokens: int = 2000
 
     # Data directory
     db_query_data_dir: str = str(Path.home() / ".db_query")

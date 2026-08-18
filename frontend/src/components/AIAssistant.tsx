@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { Card, Space, Button, Typography, Avatar, Badge, Input, message, Spin } from "antd";
 const { Text } = Typography;
 import { RobotOutlined, CloseOutlined, DownOutlined, UpOutlined, SendOutlined, UserOutlined } from "@ant-design/icons";
-import { apiClient } from "../services/api";
 
 interface AIMessage {
   id: string;
@@ -160,7 +159,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
 
     setLoading(true);
     try {
-      // 调用后端AI接口
+      // 调用集成AI服务 - 使用正确的端点
       const response = await fetch(`http://localhost:8000/api/v1/dbs/${databaseName}/ai/chat`, {
         method: "POST",
         headers: {

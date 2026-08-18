@@ -9,7 +9,12 @@ A modern web-based tool for managing PostgreSQL database connections, viewing me
 - **Natural Language Support**: Convert natural language to SQL using AI
 - **Metadata Exploration**: Browse database schemas, tables, and columns
 - **Query History**: Track and replay previous queries
-- **Data Export**: Export query results to CSV, JSON, or Excel formats
+- **Smart Data Export**: Intelligent export functionality with auto-prompts and one-click operations
+  - **Multiple Formats**: Export to CSV, JSON, or Excel
+  - **Auto-Prompts**: Query success automatically asks if you want to export
+  - **One-Click Export**: "Execute & Export" button for instant results
+  - **Format Memory**: Remember your preferred export format
+  - **CLI Tools**: Command-line automation for batch operations
 - **Real-time Results**: View query results with execution time and row counts
 
 ## 🏗️ Project Structure
@@ -32,6 +37,7 @@ w2/db_query/
 - **Async**: asyncpg for PostgreSQL connections
 - **Validation**: Pydantic v2
 - **Data Export**: pandas, openpyxl for Excel generation
+- **AI Service**: DashScope (通义千问) for natural language to SQL conversion
 
 ### Frontend
 - **Framework**: React 18 with TypeScript
@@ -118,6 +124,48 @@ make health
 make docs
 ```
 
+## 🚀 Smart Export Features
+
+### Enhanced Export Experience
+
+The project includes intelligent export functionality designed for efficiency and user convenience:
+
+#### 🎯 One-Click Export
+- **Execute & Export** button with dropdown menu
+- Choose format (CSV/JSON/Excel) and execute in one step
+- Perfect for quick data extraction workflows
+
+#### 💡 Smart Prompts
+- Automatic export suggestion after successful queries
+- Quick format selection with visual icons
+- Optional "Remember my choice" for future queries
+
+#### 🛠️ Command-Line Tools
+- **query_export_cli.py**: Python CLI for automated exports
+- **query_export.bat**: Windows batch file wrapper
+- **test_export_automation.py**: Automated testing script
+
+```bash
+# Example: Export query results via CLI
+python query_export_cli.py --db mydb --sql "SELECT * FROM users LIMIT 100" --format csv
+
+# Example: Use Windows batch file
+query_export.bat --db mydb --file query.sql --format json --output results.json
+```
+
+#### 📊 Format Comparison
+| Format | Best For | File Size | Features |
+|--------|----------|-----------|----------|
+| **CSV** | Excel analysis, data exchange | Small | Universal compatibility |
+| **JSON** | API integration, programmatic use | Medium | Structured with metadata |
+| **Excel** | Reports, formatted data | Large | Rich formatting support |
+
+### Documentation
+
+- **[Enhanced Export Guide](ENHANCED_EXPORT_GUIDE.md)** - Complete feature documentation
+- **[Quick Start Export](QUICK_START_EXPORT.md)** - Quick reference and examples
+- **[Project Summary](PROJECT_SUMMARY.md)** - Implementation details and status
+
 ## Phase 1 Status
 
 ✅ **Phase 1 Complete**: All setup and foundation tasks completed.
@@ -128,7 +176,17 @@ make docs
 - Data models defined with camelCase API convention
 - Makefile with common development tasks
 - REST Client test file for API testing
+- Enhanced export functionality implemented
+- Smart user interaction features added
+- Command-line automation tools created
 
 ## Next Steps
 
 Proceed to Phase 2 for core feature implementation (US1 + US2).
+
+**Recent Enhancements:**
+- ✅ Smart export prompts after query execution
+- ✅ One-click "Execute & Export" functionality
+- ✅ Format memory for user preferences
+- ✅ CLI tools for automated exports
+- ✅ Comprehensive documentation
