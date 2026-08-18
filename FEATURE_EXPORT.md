@@ -26,10 +26,19 @@
 
 ### 1.2 主要特性
 
+#### 🤖 AI助手智能导出
+- **智能提示**: AI助手在查询成功后自动询问是否需要导出
+- **自然语言交互**: 支持通过对话方式选择导出格式和操作
+- **上下文感知**: AI助手了解查询状态、结果数量和数据特征
+- **操作引导**: 提供清晰的导出选项按钮和操作指引
+- **历史记忆**: 记住用户的导出偏好和历史操作
+
 #### 🎯 智能导出体验
-- **自动提示**: 查询成功后智能询问是否需要导出
+- **AI助手集成**: 通过AI助手智能提示导出建议
+- **自动提示**: 查询成功后AI助手智能询问是否需要导出
 - **格式记忆**: 记住用户偏好，减少重复操作
 - **一键操作**: Execute & Export 快速选择并导出
+- **自然语言交互**: 支持通过对话方式选择导出格式
 
 #### 📊 多格式支持
 - **CSV**: 通用数据格式，兼容Excel、Google Sheets
@@ -66,10 +75,16 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                        前端层                                │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ 格式选择器   │  │ 导出提示框   │  │ 一键导出按钮 │      │
-│  │ExportFormat  │  │ExportPrompt  │  │Execute&Export│      │
-│  │  Selector    │  │   Modal      │  │   Dropdown   │      │
+│  │  AI助手     │  │ 格式选择器   │  │ 导出提示框   │      │
+│  │ AIAssistant │  │ExportFormat  │  │ExportPrompt  │      │
+│  │             │  │  Selector    │  │   Modal      │      │
+│  │ 智能导出提示│  │              │  │              │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ┌──────────────┐                                              │
+│  │ 一键导出按钮 │                                              │
+│  │Execute&Export│                                              │
+│  │   Dropdown   │                                              │
+│  └──────────────┘                                              │
 └───────────────────────────┬─────────────────────────────────┘
                             │ HTTP Request
 ┌───────────────────────────▼─────────────────────────────────┐
@@ -77,7 +92,8 @@
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
 │  │   API层      │  │   服务层     │  │   数据层     │      │
 │  │ /api/v1/dbs/ │  │ ExportService│  │ 执行SQL查询  │      │
-│  │  export      │  │              │  │ +格式转换    │      │
+│  │  export      │  │ + AI Chat    │  │ +格式转换    │      │
+│  │ /ai/chat     │  │              │  │              │      │
 │  └──────────────┘  └──────────────┘  └──────────────┘      │
 └───────────────────────────┬─────────────────────────────────┘
                             │ StreamingResponse
@@ -129,9 +145,49 @@ H --> I
 
 ## 3. 技术实现细节
 
-### 3.1 智能导出功能
+### 3.1 AI助手集成
 
-#### 自动导出提示
+#### AI助手导出提示
+```typescript
+// frontend/src/components/AIAssistant.tsx
+interface AIAssistantProps {
+  querySuccess?: boolean;
+  rowCount?: number;
+  onExport?: (format: "csv" | "json") => void;
+  databaseName?: string;
+}
+
+// 查询成功时AI助手自动提示
+useEffect(() => {
+  if (querySuccess && rowCount > 0 && expanded) {
+    const exportMessage: AIMessage = {
+      id: `export_${Date.now()}`,
+      type: "export_prompt",
+      content: `查询完成！发现 ${rowCount} 行数据。需要将这次查询结果导出为 CSV 或 JSON 文件吗？`,
+      timestamp: new Date(),
+      actions: [
+        {
+          label: "导出 CSV",
+          onClick: () => onExport?.("csv"),
+        },
+        {
+          label: "导出 JSON",
+          onClick: () => onExport?.("json"),
+        },
+      ],
+    };
+    setMessages(prev => [...prev, exportMessage]);
+  }
+}, [querySuccess, rowCount, onExport]);
+```
+
+#### AI助手特性
+- **智能对话**: 通过自然语言与AI助手交互选择导出格式
+- **上下文感知**: AI助手了解当前查询状态和结果
+- **操作引导**: 提供清晰的导出选项和操作指引
+- **历史记忆**: 记住用户的导出偏好和历史操作
+
+#### 智能导出提示
 ```typescript
 // frontend/src/components/ExportPromptModal.tsx
 interface ExportPromptProps {
@@ -221,6 +277,7 @@ except Exception as e:
 | 组件 | 技术选择 | 版本 | 理由 |
 |------|----------|------|------|
 | UI框架 | Ant Design | 5.x | 组件丰富、易于使用 |
+| AI助手 | AIAssistant | Custom | 智能导出提示和交互 |
 | HTTP客户端 | Axios | 1.x | 拦截器、请求取消 |
 | 状态管理 | React Hooks | 18.x | 简洁高效 |
 | 文件处理 | Blob API | 浏览器内置 | 原生支持 |
@@ -256,6 +313,55 @@ class ExportService:
             'xml': self.export_to_xml,  # 新增
         }
         return format_map[format](columns, rows, max_rows)
+```
+
+### 5.2 AI助手功能扩展
+
+#### 新增AI导出建议
+```typescript
+// AI助手智能分析查询结果
+const analyzeQueryResult = (result: QueryResult) => {
+  const suggestions = [];
+
+  if (result.rowCount > 1000) {
+    suggestions.push({
+      type: 'warning',
+      message: '结果集较大，建议使用CSV格式以提高性能'
+    });
+  }
+
+  if (result.columns.some(col => col.dataType.includes('json'))) {
+    suggestions.push({
+      type: 'info',
+      message: '包含JSON字段，建议使用JSON格式保留结构'
+    });
+  }
+
+  return suggestions;
+};
+```
+
+#### AI助手数据类型感知
+```python
+# 后端AI分析查询结果
+def analyze_query_for_export_suggestions(query_result):
+    """分析查询结果并提供导出建议"""
+    suggestions = []
+
+    # 检查数据特征
+    if query_result.row_count > 500:
+        suggestions.append("结果集较大，CSV格式处理效率更高")
+
+    # 检查字段类型
+    json_fields = [col for col in query_result.columns if 'json' in col.data_type.lower()]
+    if json_fields:
+        suggestions.append(f"包含JSON字段：{', '.join(json_fields)}，建议使用JSON格式")
+
+    # 检查特殊字符
+    if has_special_characters(query_result):
+        suggestions.append("包含特殊字符，JSON格式可避免编码问题")
+
+    return suggestions
 ```
 
 ### 5.2 功能扩展路线图
@@ -347,6 +453,27 @@ def test_export_row_limit():
 ## 8. 使用示例
 
 ### 8.1 Web界面使用
+
+#### AI助手智能导出
+```typescript
+// AI助手自动提示导出
+<AIAssistant
+  querySuccess={queryResult.rowCount > 0}
+  rowCount={queryResult.rowCount}
+  onExport={(format) => handleExport(format)}
+  databaseName={selectedDatabase}
+/>
+
+// AI助手对话中触发导出
+const handleAIDialogueExport = async (format: 'csv' | 'json') => {
+  try {
+    await exportService.export(selectedDatabase, currentSQL, format);
+    message.success(`已成功导出为 ${format.toUpperCase()} 格式`);
+  } catch (error) {
+    message.error('导出失败，请重试');
+  }
+};
+```
 
 #### 智能导出
 ```typescript
@@ -450,7 +577,10 @@ docs/
 - ✅ 优化文档结构和可读性
 - ✅ 添加性能基准测试数据
 - ✅ 完善安全性和扩展性说明
+- ✅ 新增AI助手智能导出功能文档
+- ✅ 添加AI助手与导出功能的集成说明
 - ✅ 新增故障排除和使用场景说明
+- ✅ 完善AI助手上文感知和操作引导说明
 
 ### v1.1.0 (2026-08-17)
 - ✅ 实现智能导出提示功能
