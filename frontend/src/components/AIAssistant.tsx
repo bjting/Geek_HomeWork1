@@ -23,7 +23,9 @@ interface AIAssistantProps {
   rowCount?: number;
   onExport?: (format: "csv" | "json") => void;
   onDismiss?: () => void;
+  onShow?: () => void;
   databaseName?: string;
+  visible?: boolean;
 }
 
 export const AIAssistant: React.FC<AIAssistantProps> = ({
@@ -31,9 +33,11 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   rowCount = 0,
   onExport,
   onDismiss,
+  onShow,
   databaseName,
+  visible: propVisible = true,
 }) => {
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(propVisible);
   const [expanded, setExpanded] = useState(false);
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [showBadge, setShowBadge] = useState(false);
@@ -41,6 +45,17 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const [loading, setLoading] = useState(false);
   const [lastQuerySuccess, setLastQuerySuccess] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 同步外部visible状态到内部状态
+  useEffect(() => {
+    setVisible(propVisible);
+    if (propVisible) {
+      // 当显示时，如果有未读消息，自动展开
+      if (showBadge) {
+        setExpanded(true);
+      }
+    }
+  }, [propVisible, showBadge]);
 
   // 默认问候消息
   useEffect(() => {
@@ -69,6 +84,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
       // 如果助手是折叠状态，自动展开
       if (!expanded) {
         setExpanded(true);
+        console.log('AI assistant auto-expanded for query result');
       }
 
       const exportMessage: AIMessage = {
@@ -306,9 +322,9 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
           }}
         >
           {/* 消息列表 */}
-          <div style={{ flex: 1, overflowY: "auto", marginBottom: 12 }}>
+          <div style={{ flex: 1, overflowY: "auto", marginBottom: 12, display: 'flex', flexDirection: 'column' }}>
             <Space direction="vertical" size={8} style={{ width: "100%" }}>
-              {messages.slice().reverse().map((message) => (
+              {messages.map((message) => (
                 <div
                   key={message.id}
                   style={{

@@ -23,6 +23,7 @@ import {
   ReloadOutlined,
   ExclamationCircleOutlined,
   ThunderboltOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import { apiClient } from "../services/api";
 import { DatabaseMetadata, TableMetadata } from "../types/metadata";
@@ -59,6 +60,7 @@ export const Home: React.FC = () => {
   const [defaultExportFormat, setDefaultExportFormat] = useState<"csv" | "json" | "excel" | null>(null);
   const [querySuccess, setQuerySuccess] = useState(false);
   const [executingAndExporting, setExecutingAndExporting] = useState(false);
+  const [showAIAssistant, setShowAIAssistant] = useState(true);
 
   useEffect(() => {
     if (selectedDatabase) {
@@ -479,8 +481,26 @@ export const Home: React.FC = () => {
           overflowX: "hidden",
           padding: "24px",
           height: "100vh",
+          position: "relative"
         }}
       >
+        {/* AI Assistant Toggle Button */}
+        {!showAIAssistant && (
+          <Button
+            type="primary"
+            icon={<RobotOutlined />}
+            onClick={() => setShowAIAssistant(true)}
+            style={{
+              position: "absolute",
+              top: 24,
+              right: 24,
+              zIndex: 100
+            }}
+          >
+            AI 助手
+          </Button>
+        )}
+
         {/* Compact Metrics Row */}
         <Row gutter={12} style={{ marginBottom: 16 }}>
           <Col span={6}>
@@ -778,8 +798,13 @@ export const Home: React.FC = () => {
           onExport={(format) => {
             handleAutoExport(format);
           }}
-          onDismiss={() => setQuerySuccess(false)}
+          onDismiss={() => {
+            setQuerySuccess(false);
+            setShowAIAssistant(false);
+          }}
+          onShow={() => setShowAIAssistant(true)}
           databaseName={selectedDatabase || undefined}
+          visible={showAIAssistant}
         />
       </div>
     </div>
