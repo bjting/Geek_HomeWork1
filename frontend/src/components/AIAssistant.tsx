@@ -47,8 +47,8 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 拖动和调整大小状态
-  const [position, setPosition] = useState({ x: 20, y: 20 });
-  const [size, setSize] = useState({ width: 400, height: 450 });
+  const [position, setPosition] = useState({ x: window.innerWidth - 420, y: 24 }); // 改为右上角位置
+  const [size, setSize] = useState({ width: 400, height: 500 }); // 增加初始高度
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -248,12 +248,19 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
       };
 
       // 限制在窗口范围内
-      const maxX = window.innerWidth - 200;
-      const maxY = window.innerHeight - 100;
+      const maxX = window.innerWidth - size.width; // 根据当前窗口宽度限制
+      const maxY = window.innerHeight - 50; // 留出底部空间
       const clampedPosition = {
         x: Math.max(0, Math.min(newPosition.x, maxX)),
         y: Math.max(0, Math.min(newPosition.y, maxY))
       };
+
+      console.log('Drag constraints:', {
+        maxX, maxY,
+        newPosition, clampedPosition,
+        currentSize: size,
+        windowSize: { width: window.innerWidth, height: window.innerHeight }
+      });
 
       setPosition(clampedPosition);
     };
@@ -286,12 +293,25 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
       const deltaX = moveEvent.clientX - dragStart.x;
       const deltaY = moveEvent.clientY - dragStart.y;
 
+      // 设置最小和最大尺寸限制
+      const minWidth = 300;
+      const minHeight = 400;
+      const maxWidth = window.innerWidth - 40; // 增加最大宽度限制
+      const maxHeight = window.innerHeight - 40; // 增加最大高度限制
+
       const newSize = {
-        width: Math.max(300, size.width + deltaX), // 最小宽度300px
-        height: Math.max(400, size.height + deltaY) // 最小高度400px
+        width: Math.min(maxWidth, Math.max(minWidth, size.width + deltaX)),
+        height: Math.min(maxHeight, Math.max(minHeight, size.height + deltaY))
       };
 
-      console.log('Resizing to:', newSize);
+      console.log('Resize constraints:', {
+        minWidth, minHeight, maxWidth, maxHeight,
+        currentSize: size,
+        newSize,
+        windowSize: { width: window.innerWidth, height: window.innerHeight },
+        delta: { x: deltaX, y: deltaY }
+      });
+
       setSize(newSize);
 
       setDragStart({
@@ -377,13 +397,16 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
           size="small"
           style={{
             width: size.width,
+            height: size.height,
             borderRadius: 8,
             boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
             backgroundColor: "#f0f8ff",
             border: "2px solid #1890ff",
             position: "relative",
-            resize: "none",
+            resize: "none", // 禁用原生resize，使用自定义实现
             overflow: "hidden",
+            maxWidth: "none", // 移除最大宽度限制
+            maxHeight: "none", // 移除最大高度限制
           }}
           title={
             <div
@@ -432,6 +455,8 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
             overflowY: "auto",
             display: "flex",
             flexDirection: "column",
+            minHeight: 300, // 确保内容区域有最小高度
+            maxHeight: size.height - 100, // 确保不超过窗口高度
           }}
         >
           {/* 消息列表 */}
