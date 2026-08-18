@@ -104,3 +104,26 @@ frontend/dist/
 
 # Documentation PDFs (if sensitive)
 *.pdf
+
+# Large temporary files
+28.txt
+img.png
+
+# Temporary analysis files
+analyze_*.py
+check_*.py
+correct_analysis.py
+convert_to_jsonl.py
+detailed_compare.py
+detailed_field_comparison.py
+excel_csv_parser.py
+
+# Test automation files
+test_*.py
+test_*.bat
+*_test_server.py
+
+# Debug and development files
+*_debug.py
+*_test.py
+cleanup_*.bat
