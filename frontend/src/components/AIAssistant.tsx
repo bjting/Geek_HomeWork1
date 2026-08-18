@@ -63,7 +63,12 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({
 
   // 查询成功时显示导出询问
   useEffect(() => {
-    if (querySuccess && rowCount > 0 && expanded) {
+    if (querySuccess && rowCount > 0) {
+      // 如果助手是折叠状态，自动展开
+      if (!expanded) {
+        setExpanded(true);
+      }
+
       const exportMessage: AIMessage = {
         id: `export_${Date.now()}`,
         type: "export_prompt",
